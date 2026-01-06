@@ -7,15 +7,22 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_pdfview/flutter_pdfview.dart';
+import 'package:provider/provider.dart';
 import 'package:smx/calendar_page.dart';
 import 'package:smx/metronome_page.dart';
+import 'package:smx/metronome_service.dart';
 import 'package:uuid/uuid.dart';
 
 // Punto di ingresso principale dell'applicazione.
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 void main() {
-  runApp(const SheetMusicApp());
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => MetronomeService(),
+      child: const SheetMusicApp(),
+    ),
+  );
 }
 
 // Istanza globale di Uuid per generare ID univoci.
@@ -1208,6 +1215,15 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
               ),
             ),
         ],
+      ),
+      floatingActionButton: Consumer<MetronomeService>(
+        builder: (context, metronomeService, child) {
+          return FloatingActionButton(
+            onPressed: () => metronomeService.startStop(),
+            tooltip: 'Metronomo',
+            child: Icon(metronomeService.isPlaying ? Icons.stop : Icons.play_arrow),
+          );
+        },
       ),
     );
   }
