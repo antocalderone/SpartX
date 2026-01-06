@@ -1,19 +1,6 @@
-# smx
+# SpartX
 
-Un nuovo progetto Flutter.
-
-## Per Iniziare
-
-Questo progetto è un punto di partenza per un'applicazione Flutter.
-
-Alcune risorse per iniziare se questo è il tuo primo progetto Flutter:
-
-- [Lab: Scrivi la tua prima app Flutter](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Esempi utili di Flutter](https://docs.flutter.dev/cookbook)
-
-Per aiuto sull'introduzione allo sviluppo con Flutter, visualizza la
-[documentazione online](https://docs.flutter.dev/), che offre tutorial,
-esempi, guide sullo sviluppo mobile e un riferimento API completo.
+Gestione spartiti musicali in Android
 
 ## Tecnologie e Librerie Utilizzate
 
