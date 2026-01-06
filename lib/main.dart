@@ -7,15 +7,23 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_pdfview/flutter_pdfview.dart';
+import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:smx/calendar_page.dart';
 import 'package:smx/metronome_page.dart';
+import 'package:smx/metronome_service.dart';
 import 'package:uuid/uuid.dart';
 
 // Punto di ingresso principale dell'applicazione.
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 void main() {
-  runApp(const SheetMusicApp());
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => MetronomeService(),
+      child: const SheetMusicApp(),
+    ),
+  );
 }
 
 // Istanza globale di Uuid per generare ID univoci.
@@ -644,6 +652,10 @@ class _SheetMusicPageState extends State<SheetMusicPage> {
     }
   }
 
+  Future<void> _shareFile(File file) async {
+    await Share.shareXFiles([XFile(file.path)]);
+  }
+
   Future<File> _getAnnotationsFile(File pdfFile) async {
     final musicDir = await getSheetMusicDirectory();
     final fileName = p.basenameWithoutExtension(pdfFile.path);
@@ -719,6 +731,7 @@ class _SheetMusicPageState extends State<SheetMusicPage> {
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
+                              IconButton(icon: const Icon(Icons.share_outlined), onPressed: () => _shareFile(file)),
                               IconButton(icon: const Icon(Icons.edit_outlined), onPressed: () => _renameFile(file)),
                               IconButton(icon: const Icon(Icons.delete_outline, color: Colors.redAccent), onPressed: () => _deleteFile(file)),
                             ],
@@ -1044,6 +1057,8 @@ class _PlaylistDetailsPageState extends State<PlaylistDetailsPage> {
 
 // ------------------- PAGINA VISUALIZZATORE PDF ------------------- //
 
+enum DrawingTool { pen, highlighter }
+
 /// Pagina che visualizza un file PDF.
 class PdfViewerPage extends StatefulWidget {
   final File pdfFile;
@@ -1057,6 +1072,7 @@ class PdfViewerPage extends StatefulWidget {
 class _PdfViewerPageState extends State<PdfViewerPage> {
   bool _isAnnotationMode = false;
   Color _selectedColor = Colors.red;
+  DrawingTool _currentTool = DrawingTool.pen;
   // Mappa che associa un numero di pagina a una lista di tratti
   Map<int, List<List<DrawingPoint>>> _annotations = {};
   int _currentPage = 0;
@@ -1109,15 +1125,30 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
   void _onPanStart(DragStartDetails details) {
     if (!_isAnnotationMode) return;
 
+    Paint paint;
+    switch (_currentTool) {
+      case DrawingTool.pen:
+        paint = Paint()
+          ..color = _selectedColor
+          ..strokeWidth = 3.0
+          ..strokeCap = StrokeCap.round
+          ..isAntiAlias = true
+          ..style = PaintingStyle.stroke;
+        break;
+      case DrawingTool.highlighter:
+        paint = Paint()
+          ..color = Colors.yellow.withOpacity(0.3)
+          ..strokeWidth = 10.0
+          ..strokeCap = StrokeCap.round
+          ..isAntiAlias = true
+          ..style = PaintingStyle.stroke;
+        break;
+    }
+
     final newPath = <DrawingPoint>[];
     final point = DrawingPoint(
       offset: details.localPosition,
-      paint: Paint()
-        ..color = _selectedColor
-        ..strokeWidth = 3.0
-        ..strokeCap = StrokeCap.round
-        ..isAntiAlias = true
-        ..style = PaintingStyle.stroke,
+      paint: paint,
     );
     newPath.add(point);
 
@@ -1131,7 +1162,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
 
     final point = DrawingPoint(
       offset: details.localPosition,
-      paint: _annotations[_currentPage]!.last.last.paint, // Usa la stessa paint dell'ultimo punto
+      paint: _annotations[_currentPage]!.last.last.paint,
     );
 
     setState(() {
@@ -1147,9 +1178,6 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
 
   @override
   Widget build(BuildContext context) {
-    // CORREZIONE: Usa MediaQuery per ottenere il padding della safe area
-    final bottomPadding = MediaQuery.of(context).padding.bottom;
-
     return Scaffold(
       appBar: AppBar(
         title: Text(p.basename(widget.pdfFile.path)),
@@ -1165,7 +1193,6 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
         children: [
           PDFView(
             filePath: widget.pdfFile.path,
-            // Disabilita lo swipe solo quando si è in modalità annotazione
             swipeHorizontal: !_isAnnotationMode,
             onViewCreated: (controller) {
               _pdfController = controller;
@@ -1176,28 +1203,28 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
               });
             },
           ),
-          // Layer per il disegno delle annotazioni
           IgnorePointer(
-            ignoring: !_isAnnotationMode, // CORREZIONE: ignora i tocchi se non si è in modalità annotazione
+            ignoring: !_isAnnotationMode,
             child: GestureDetector(
               onPanStart: _onPanStart,
               onPanUpdate: _onPanUpdate,
               child: CustomPaint(
                 painter: AnnotationPainter(annotations: _annotations[_currentPage] ?? []),
-                child: Container(), // Un container vuoto per coprire l'intera area
+                child: Container(),
               ),
             ),
           ),
-          // Barra degli strumenti per le annotazioni
           if (_isAnnotationMode)
             Positioned(
-              // CORREZIONE: Aggiungi il padding della safe area
-              bottom: 20 + bottomPadding,
+              top: 0,
               left: 0,
               right: 0,
               child: AnnotationToolbar(
                 selectedColor: _selectedColor,
-                onColorChanged: (color) => setState(() => _selectedColor = color),
+                onColorChanged: (color) => setState(() {
+                  _selectedColor = color;
+                  _currentTool = DrawingTool.pen;
+                }),
                 onUndo: () {
                   if (_annotations.containsKey(_currentPage) && _annotations[_currentPage]!.isNotEmpty) {
                     setState(() {
@@ -1205,10 +1232,22 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
                     });
                   }
                 },
+                currentTool: _currentTool,
+                onToolChanged: (tool) => setState(() => _currentTool = tool),
               ),
             ),
         ],
       ),
+      floatingActionButton: Consumer<MetronomeService>(
+        builder: (context, metronomeService, child) {
+          return FloatingActionButton(
+            onPressed: () => metronomeService.startStop(),
+            tooltip: 'Metronomo',
+            child: Icon(metronomeService.isPlaying ? Icons.stop : Icons.play_arrow),
+          );
+        },
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 }
@@ -1237,12 +1276,21 @@ class AnnotationToolbar extends StatelessWidget {
   final Color selectedColor;
   final ValueChanged<Color> onColorChanged;
   final VoidCallback onUndo;
+  final DrawingTool currentTool;
+  final ValueChanged<DrawingTool> onToolChanged;
 
-  const AnnotationToolbar({super.key, required this.selectedColor, required this.onColorChanged, required this.onUndo});
+  const AnnotationToolbar({
+    super.key,
+    required this.selectedColor,
+    required this.onColorChanged,
+    required this.onUndo,
+    required this.currentTool,
+    required this.onToolChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final colors = [Colors.red, Colors.blue, Colors.green, Colors.black];
+    final colors = [Colors.red, Colors.yellow, Colors.green, Colors.black];
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 20),
@@ -1253,6 +1301,18 @@ class AnnotationToolbar extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
+            IconButton(
+              icon: const Icon(Icons.edit),
+              tooltip: 'Penna',
+              color: currentTool == DrawingTool.pen ? Theme.of(context).colorScheme.secondary : null,
+              onPressed: () => onToolChanged(DrawingTool.pen),
+            ),
+            IconButton(
+              icon: const Icon(Icons.format_paint),
+              tooltip: 'Evidenziatore',
+              color: currentTool == DrawingTool.highlighter ? Theme.of(context).colorScheme.secondary : null,
+              onPressed: () => onToolChanged(DrawingTool.highlighter),
+            ),
             ...colors.map((color) => _buildColorButton(context, color)),
             IconButton(
               icon: const Icon(Icons.undo),
@@ -1275,7 +1335,9 @@ class AnnotationToolbar extends StatelessWidget {
           color: color,
           shape: BoxShape.circle,
           border: Border.all(
-            color: selectedColor == color ? Theme.of(context).colorScheme.onBackground : Colors.transparent,
+            color: selectedColor == color && currentTool == DrawingTool.pen
+                ? Theme.of(context).colorScheme.onBackground
+                : Colors.transparent,
             width: 2,
           ),
         ),
